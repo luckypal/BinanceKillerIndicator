@@ -1,4 +1,5 @@
 const _ = require('lodash');
+const moment = require('moment');
 const fs = require('fs');
 const log = require('../../core/log');
 
@@ -7,6 +8,7 @@ const indicatorFiles = fs.readdirSync(indicatorsPath);
 const Indicators = {};
 
 const AsyncIndicatorRunner = require('./asyncIndicatorRunner');
+const { config: advisorConfig } = require('./advisorConfig');
 
 _.each(indicatorFiles, function (indicator) {
   const indicatorName = indicator.split(".")[0];
@@ -28,12 +30,7 @@ var Base = function (settings) {
   this.processedTicks = 0;
   this.setup = false;
   this.settings = settings;
-  this.tradingAdvisor = {
-    enabled: true,
-    method: 'StochRSI',
-    candleSize: 15,
-    historySize: 10,
-  };
+  this.tradingAdvisor = advisorConfig;
   // defaults
   this.priceValue = 'close';
   this.indicators = {};
@@ -137,20 +134,20 @@ Base.prototype.propogateTick = function (candle) {
     // whether candle start time is > startTime
     var isPremature = false;
 
-    if (mode === 'realtime') {
-      const startTimeMinusCandleSize = startTime
-        .clone()
-        .subtract(this.tradingAdvisor.candleSize, "minutes");
+    // if (mode === 'realtime') {
+    //   const startTimeMinusCandleSize = startTime
+    //     .clone()
+    //     .subtract(this.tradingAdvisor.candleSize, "minutes");
 
-      isPremature = candle.start < startTimeMinusCandleSize;
-    }
+    //   isPremature = candle.start < startTimeMinusCandleSize;
+    // }
 
     if (isAllowedToCheck && !isPremature) {
       this.completedWarmup = true;
-      this.emit(
-        'stratWarmupCompleted',
-        { start: candle.start.clone() }
-      );
+      // this.emit(
+      //   'stratWarmupCompleted',
+      //   { start: candle.start.clone() }
+      // );
     }
   }
 
@@ -184,10 +181,10 @@ Base.prototype.propogateTick = function (candle) {
       : indicator.result;
   });
 
-  this.emit('stratUpdate', {
-    date: candle.start.clone(),
-    indicators
-  });
+  // this.emit('stratUpdate', {
+  //   date: candle.start.clone(),
+  //   indicators
+  // });
 
   // are we totally finished?
   const completed = this.age === this.processedTicks;
@@ -284,6 +281,10 @@ Base.prototype.advice = function (newDirection) {
     id: 'advice-' + this.propogatedAdvices,
     recommendation: newDirection
   };
+  const date = moment(this.candle.closeTime + 1)
+    .utcOffset(-5)
+    .format('YYYY-MM-DD HH:mm:ss');
+  console.log(this.settings.symbol, newDirection, date, this.candle.close);
 
   if (trigger) {
     advice.trigger = trigger;
@@ -321,6 +322,10 @@ Base.prototype.finish = function (done) {
   // we are not done, register cb
   // and call after we are..
   this.finishCb = done;
+}
+
+Base.prototype.emit = function (event, data) {
+  // console.log(event, data);
 }
 
 module.exports = Base;
