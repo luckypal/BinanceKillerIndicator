@@ -19,7 +19,6 @@ method.init = function() {
   this.addIndicator('rsi', 'RSI', { interval: this.interval });
 
 	this.RSIhistory = [];
-  this.candles = [];
   this.lastBuyPrice = 0;
   this.index = 0;
 	this.lastBuyIndex = 0;
@@ -28,10 +27,10 @@ method.init = function() {
     failed: 0,
 		candleSum: 0,
 		count: 0,
-		total: 4000,
+		total: 1000,
 		percent: 0
   };
-	this.leverage = 7;
+	this.leverage = 5;
 }
 
 // what happens on every new candle?
@@ -42,21 +41,15 @@ method.update = function(candle) {
 	this.rsi = this.indicators.rsi.result;
 
 	this.RSIhistory.push(this.rsi);
-  this.candles.push(candle);
 
 	if(_.size(this.RSIhistory) > this.interval) {
 		// remove oldest RSI value
 		this.RSIhistory.shift();
-    this.candles.shift();
   }
 
 	this.lowestRSI = _.min(this.RSIhistory);
 	this.highestRSI = _.max(this.RSIhistory);
 	this.shortRSI = ((this.rsi - this.lowestRSI) / (this.highestRSI - this.lowestRSI)) * 100;
-}
-
-method.lastCandle = function() {
-  return this.candles[this.candles.length - 1];
 }
 
 // for debugging purposes log the last
@@ -68,16 +61,15 @@ method.log = function() {
 method.check = function() {
 	const {leverage} = this;
   if (this.lastBuyPrice) {
-    const lastCandle = this.lastCandle();
     const longLimit = this.lastBuyPrice * 1.01;
     const shortLimit = this.lastBuyPrice * (1 - 1 / leverage / 2);
-    if (lastCandle.low <= shortLimit) {
+    if (this.candle.low <= shortLimit) {
       this.lastBuyPrice = 0;
       this.result.failed += 50;
 			this.result.percent = 0.5;
 			this.result.total *= this.result.percent;
       this.logResult();
-    } else if (longLimit <= lastCandle.high) {
+    } else if (longLimit <= this.candle.high) {
       this.lastBuyPrice = 0;
       this.result.succeed += leverage * 0.9994;
 			this.result.percent = (1 + leverage * 0.01) * 0.9994
@@ -104,8 +96,7 @@ method.check = function() {
 			this.trend.adviced = true;
 			this.advice('short');
       if (this.lastBuyPrice) {
-        const lastCandle = this.lastCandle();
-        const percent = (lastCandle.close - this.lastBuyPrice) / this.lastBuyPrice;
+        const percent = (this.candle.close - this.lastBuyPrice) / this.lastBuyPrice;
 				const aPercent = Math.abs(percent);
         if (percent >= 0) {
 					this.result.succeed += leverage * percent * 0.9992;
@@ -141,8 +132,7 @@ method.check = function() {
 		if(this.trend.persisted && !this.trend.adviced) {
 			this.trend.adviced = true;
 			this.advice('long');
-      const lastCandle = this.lastCandle();
-      this.lastBuyPrice = lastCandle.close;
+      this.lastBuyPrice = this.candle.close;
 			this.lastBuyIndex = this.index;
 		} else
 			this.advice();
@@ -164,7 +154,7 @@ method.logResult = function() {
 }
 
 method.end = function() {
-  console.log(this.result);
+  console.log(this.settings.symbol, this.result);
 	console.log('Average candle length per trade', this.result.candleSum / this.result.count);
 }
 

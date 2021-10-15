@@ -278,13 +278,16 @@ Base.prototype.advice = function (newDirection) {
   this.propogatedAdvices++;
 
   const advice = {
+    symbol: this.settings.symbol,
+    price: this.candle[this.priceValue],
+    date: this.candle.closeTime,
     id: 'advice-' + this.propogatedAdvices,
-    recommendation: newDirection
+    direction: newDirection,
   };
-  const date = moment(this.candle.closeTime + 1)
-    .utcOffset(-5)
-    .format('YYYY-MM-DD HH:mm:ss');
-  console.log(this.settings.symbol, newDirection, date, this.candle.close);
+  // const date = moment(this.candle.closeTime + 1)
+  //   .utcOffset(-5)
+  //   .format('YYYY-MM-DD HH:mm:ss');
+  // console.log(this.settings.symbol, newDirection, date, this.candle.close);
 
   if (trigger) {
     advice.trigger = trigger;

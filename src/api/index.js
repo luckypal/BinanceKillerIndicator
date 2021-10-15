@@ -1,10 +1,10 @@
 const express = require('express');
-const { updateSymbol } = require('../exchange/binance');
+// const { updateSymbol } = require('../exchange/binance');
 const app = express()
 const { HTTP_PORT: httpPort } = process.env;
 
 app.get('/updateSymbol', function (req, res) {
-  updateSymbol();
+  // updateSymbol();
 })
 
 app.listen(httpPort);
