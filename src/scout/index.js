@@ -5,7 +5,7 @@ const { readSymbols } = require("../util/storage");
 const log = require('../core/log');
 const WrappedStrategy = require('./advisor/baseTradingMethod');
 const { getCandles } = require('../exchange/binance');
-const { candleSize, historySize } = require('../core/config').tradingAdvisor;
+const { candleSize, profitHours } = require('../core/config').tradingAdvisor;
 const { KILLER_PORTS = '' } = process.env;
 const killerPorts = KILLER_PORTS.split(',');
 
@@ -33,18 +33,28 @@ function getNearCandle(candles) {
   return candles[1];
 }
 
+function getProfits() {
+  const profits = {};
+  symbols.forEach(symbol => {
+    const tradingStrategy = tradingMethods[symbol];
+    profits[symbol] = tradingStrategy.getDailyProfit();
+  });
+  return profits;
+}
+
 const start = async () => {
+  const historyCandleSize = profitHours * (60 / candleSize);
+
   await Promise.all(symbols.map(async symbol => {
     const tradingStrategy = new WrappedStrategy({
       symbol,
     });
-
-    const candles = await getCandles(symbol, historySize * 30);
+    const candles = await getCandles(symbol, historyCandleSize);
     _.forEach(candles, (candle) => tradingStrategy.tick(candle, () => { }));
     tradingMethods[symbol] = tradingStrategy;
     tradingStrategy.finish(() => { });
   }));
-  console.log('Ready.');
+  console.log('Ready.', getProfits());
 }
 
 cron.schedule(`*/${candleSize} * * * *`, async () => {
@@ -61,11 +71,9 @@ cron.schedule(`*/${candleSize} * * * *`, async () => {
     return tradingStrategy.lastAdvice;
   }))).filter(advice => !!advice);
 
-  const profits = {};
-  symbols.forEach(symbol => {
-    const tradingStrategy = tradingMethods[symbol];
-    profits[symbol] = tradingStrategy.getDailyProfit();
-  });
+  if (!newAdvices.length) return;
+
+  const profits = getProfits();
 
   const ranks = Object.assign([], symbols);
   ranks.sort((a, b) => {
