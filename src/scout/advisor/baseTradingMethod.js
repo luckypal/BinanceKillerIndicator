@@ -21,6 +21,7 @@ _.each(indicatorFiles, function (indicator) {
 });
 
 const allowedIndicators = _.keys(Indicators);
+const HOUR_MS = 60 * 60 * 1000;
 
 var Base = function (settings) {
   _.bindAll(this);
@@ -355,8 +356,8 @@ Base.prototype.storeResult = function (profit) {
     closeTime: this.candle.closeTime
   });
 
-  const { profitHours } = this.settings;
-  const limitTime = this.candle.closeTime - profitHours * 60 * 60 * 1000;
+  const { profitHours } = advisorConfig;
+  const limitTime = this.candle.closeTime - profitHours * HOUR_MS;
   this.result = this.result.filter(({ openTime }) => openTime > limitTime);
 }
 
@@ -394,7 +395,6 @@ Base.prototype.finish = function (done) {
 
 Base.prototype.emit = function (event, data) {
   if (event == 'advice') this.lastAdvice = data;
-  console.log(data);
 }
 
 module.exports = Base;

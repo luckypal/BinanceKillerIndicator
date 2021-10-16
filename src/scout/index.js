@@ -2,6 +2,7 @@ const _ = require('lodash');
 const cron = require('node-cron');
 const axios = require('axios').default;
 const { readSymbols } = require("../util/storage");
+const log = require('../core/log');
 const WrappedStrategy = require('./advisor/baseTradingMethod');
 const { getCandles } = require('../exchange/binance');
 const { candleSize, historySize } = require('../core/config').tradingAdvisor;
@@ -16,27 +17,26 @@ _.each(strategy, function (fn, name) {
   WrappedStrategy.prototype[name] = fn;
 });
 
-// WrappedStrategy.prototype.emit = function (event, data) {
-//   killerPorts.forEach(async (port) => {
-//     const url = `http://localhost:${port}/api/bisignal`;
-//     try {
-//       await axios.post(url, data);
-//     } catch (e) { }
-//   });
-// };
-
-let symbols = ['DASHUSDT']; // readSymbols();
+let symbols = readSymbols();
 const tradingMethods = {};
 
 const updateSymbol = () => {
   symbols = readSymbols();
 }
 
+function getNearCandle(candles) {
+  const now = Date.now();
+  const diff0 = Math.abs(now - candles[0].closeTime);
+  const diff1 = Math.abs(now - candles[1].closeTime);
+
+  if (diff0 < diff1) return candles[0];
+  return candles[1];
+}
+
 const start = async () => {
   await Promise.all(symbols.map(async symbol => {
     const tradingStrategy = new WrappedStrategy({
       symbol,
-      profitHours: 3
     });
 
     const candles = await getCandles(symbol, historySize * 30);
@@ -50,7 +50,7 @@ const start = async () => {
 cron.schedule(`*/${candleSize} * * * *`, async () => {
   const newAdvices = (await Promise.all(symbols.map(async symbol => {
     const candles = await getCandles(symbol, 2);
-    const candle = candles[0];
+    const candle = getNearCandle(candles);
     const tradingStrategy = tradingMethods[symbol];
     if (!tradingStrategy) return;
 
@@ -61,7 +61,33 @@ cron.schedule(`*/${candleSize} * * * *`, async () => {
     return tradingStrategy.lastAdvice;
   }))).filter(advice => !!advice);
 
-  console.log(newAdvices);
+  const profits = {};
+  symbols.forEach(symbol => {
+    const tradingStrategy = tradingMethods[symbol];
+    profits[symbol] = tradingStrategy.getDailyProfit();
+  });
+
+  const ranks = Object.assign([], symbols);
+  ranks.sort((a, b) => {
+    if (profits[a] < profits[b]) return 1;
+    return -1;
+  });
+
+  newAdvices.forEach(advice => {
+    advice.rank = ranks.indexOf(advice.symbol);
+  });
+
+  newAdvices.sort((a, b) => {
+    if (a.rank > b.rank) return 1;
+    return -1;
+  });
+
+  killerPorts.forEach(async (port) => {
+    const url = `http://localhost:${port}/api/bisignal`;
+    try {
+      await axios.post(url, newAdvices);
+    } catch (e) { }
+  });
 });
 
 module.exports = {
