@@ -1,6 +1,6 @@
 const _ = require('lodash');
-const moment = require('moment');
 const fs = require('fs');
+const cuid = require('cuid');
 const log = require('../../core/log');
 
 const indicatorsPath = `${__dirname}/../../strategy/indicators/`;
@@ -323,10 +323,10 @@ Base.prototype.advice = function (newDirection) {
   this.propogatedAdvices++;
 
   const advice = {
+    id: cuid(),
     symbol: this.settings.symbol,
     price,
     date: this.candle.closeTime,
-    id: 'advice-' + this.propogatedAdvices,
     direction: newDirection,
     dailyProfit: this.getDailyProfit()
   };
