@@ -1,5 +1,5 @@
 const Binance = require('binance-api-node').default;
-const { config } = require('../scout/advisor/advisorConfig');
+const config = require('../core/config').tradingAdvisor;
 
 const client = Binance()
 
@@ -7,7 +7,7 @@ const getCandles = async (symbol, limit) => {
   const { candleSize } = config;
   const candleInterval = `${candleSize}m`;
   const candles = await client.candles({
-    symbol: `${symbol}USDT`,
+    symbol: symbol,
     interval: candleInterval,
     limit
   });
@@ -16,17 +16,15 @@ const getCandles = async (symbol, limit) => {
 
 const checkDayStats = async () => {
   const stats = await client.dailyStats();
-  stats.filter(stat => stat.symbol.endsWith('USDT'))
+  const symbols = stats.filter(stat => stat.symbol.endsWith('USDT'))
     .sort((a, b) => {
       const { quoteVolume: aq } = a;
       const { quoteVolume: bq } = b;
       if (parseFloat(aq) < parseFloat(bq)) return 1;
       return -1;
     })
-    .filter((stat, index) => index <= 30)
-    .map(({ symbol, quoteVolume }) => {
-      console.log(symbol, quoteVolume);
-    });
+    .filter(({ symbol }, index) => index <= 30 && symbol != 'BUSDUSDT')
+    .map(({ symbol }) => symbol);
 }
 
 // checkDayStats()

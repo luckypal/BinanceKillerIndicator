@@ -8,7 +8,7 @@ const indicatorFiles = fs.readdirSync(indicatorsPath);
 const Indicators = {};
 
 const AsyncIndicatorRunner = require('./asyncIndicatorRunner');
-const { config: advisorConfig } = require('./advisorConfig');
+const advisorConfig = require('../../core/config').tradingAdvisor;
 
 _.each(indicatorFiles, function (indicator) {
   const indicatorName = indicator.split(".")[0];
@@ -45,6 +45,13 @@ var Base = function (settings) {
 
   this._currentDirection;
 
+  this.lastOpenTime = 0;
+  this.lastBuyPrice = 0;
+  this.lastBuyIndex = 0;
+  this.result = [];
+  this.leverage = 5;
+  this.lastAdvice = null;
+
   // make sure we have all methods
   _.each(['init', 'check'], function (fn) {
     if (!this[fn])
@@ -78,6 +85,7 @@ var Base = function (settings) {
 
 Base.prototype.tick = function (candle, done) {
   this.age++;
+  this.lastAdvice = null;
 
   const afterAsync = () => {
     this.calculateSyncIndicators(candle, done);
@@ -123,6 +131,7 @@ Base.prototype.calculateSyncIndicators = function (candle, done) {
 Base.prototype.propogateTick = function (candle) {
   this.candle = candle;
   this.update(candle);
+  this.checkLimits();
 
   this.processedTicks++;
   var isAllowedToCheck = this.requiredHistory <= this.age;
@@ -227,6 +236,23 @@ Base.prototype.addIndicator = function (name, type, parameters) {
   // some indicators need a price stream, others need full candles
 }
 
+Base.prototype.checkLimits = function () {
+  if (!this.lastBuyPrice) return;
+
+  const { leverage } = this;
+  const longLimit = this.lastBuyPrice * 1.01;
+  const shortLimit = this.lastBuyPrice * (1 - 1 / leverage / 2);
+  if (this.candle.low <= shortLimit) {
+    this.lastBuyPrice = 0;
+    const percent = 0.5;
+    this.storeResult(percent);
+  } else if (longLimit <= this.candle.high) {
+    this.lastBuyPrice = 0;
+    const percent = (1 + leverage * 0.01) * 0.9994
+    this.storeResult(percent);
+  }
+}
+
 Base.prototype.advice = function (newDirection) {
   // ignore legacy soft advice
   if (!newDirection) {
@@ -274,15 +300,34 @@ Base.prototype.advice = function (newDirection) {
   }
 
   this._currentDirection = newDirection;
+  const price = this.candle[this.priceValue];
+
+  if (newDirection == 'short' && this.lastBuyPrice) {
+    const { leverage } = this;
+    let percent = (price - this.lastBuyPrice) / this.lastBuyPrice;
+    const aPercent = Math.abs(percent);
+    if (percent >= 0) {
+      percent = (1 + leverage * aPercent) * 0.9992;
+    } else {
+      percent = (1 - leverage * aPercent * 1.0008);
+    }
+    this.storeResult(percent);
+    this.lastBuyPrice = 0;
+  } else if (newDirection == 'long') {
+    this.lastBuyPrice = price;
+    this.lastBuyIndex = this.age;
+    this.lastOpenTime = this.candle.openTime;
+  }
 
   this.propogatedAdvices++;
 
   const advice = {
     symbol: this.settings.symbol,
-    price: this.candle[this.priceValue],
+    price,
     date: this.candle.closeTime,
     id: 'advice-' + this.propogatedAdvices,
     direction: newDirection,
+    dailyProfit: this.getDailyProfit()
   };
   // const date = moment(this.candle.closeTime + 1)
   //   .utcOffset(-5)
@@ -299,6 +344,26 @@ Base.prototype.advice = function (newDirection) {
   this.emit('advice', advice);
 
   return this.propogatedAdvices;
+}
+
+Base.prototype.storeResult = function (profit) {
+  const candleCount = this.age - this.lastBuyIndex;
+  this.result.push({
+    profit: Math.floor(profit * 10000) / 10000,
+    candleCount,
+    openTime: this.lastOpenTime,
+    closeTime: this.candle.closeTime
+  });
+
+  const { profitHours } = this.settings;
+  const limitTime = this.candle.closeTime - profitHours * 60 * 60 * 1000;
+  this.result = this.result.filter(({ openTime }) => openTime > limitTime);
+}
+
+Base.prototype.getDailyProfit = function () {
+  let total = 1;
+  this.result.forEach(({ profit }) => total *= profit);
+  return Math.floor(total * 10000) / 10000;
 }
 
 Base.prototype.notify = function (content) {
@@ -328,7 +393,8 @@ Base.prototype.finish = function (done) {
 }
 
 Base.prototype.emit = function (event, data) {
-  // console.log(event, data);
+  if (event == 'advice') this.lastAdvice = data;
+  console.log(data);
 }
 
 module.exports = Base;
