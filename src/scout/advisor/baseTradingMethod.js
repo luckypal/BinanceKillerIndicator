@@ -1,6 +1,7 @@
 const _ = require('lodash');
 const fs = require('fs');
 const cuid = require('cuid');
+var moment = require('moment');
 const log = require('../../core/log');
 
 const indicatorsPath = `${__dirname}/../../strategy/indicators/`;
@@ -48,10 +49,19 @@ var Base = function (settings) {
 
   this.lastOpenTime = 0;
   this.lastBuyPrice = 0;
+  this.lastLongPrice = 0;
   this.lastBuyIndex = 0;
+  this.limitPercent = 0.01;
+
   this.result = [];
   this.leverage = 5;
   this.lastAdvice = null;
+  this.statistics = {
+    filled: 0,
+    stoped: 0,
+    plus: 0,
+    minus: 0,
+  };
 
   // make sure we have all methods
   _.each(['init', 'check'], function (fn) {
@@ -68,10 +78,10 @@ var Base = function (settings) {
   if (!this.onTrade)
     this.onTrade = function () { };
 
+  this.requiredHistory = this.tradingAdvisor.historySize;
+
   // let's run the implemented starting point
   this.init();
-
-  this.requiredHistory = this.tradingAdvisor.historySize;
 
   if (!this.log)
     this.log = function () { };
@@ -238,23 +248,53 @@ Base.prototype.addIndicator = function (name, type, parameters) {
 }
 
 Base.prototype.checkLimits = function () {
-  if (!this.lastBuyPrice) return;
+  if (!this.lastBuyPrice.length) return;
 
   const { leverage } = this;
-  const longLimit = this.lastBuyPrice * 1.01;
-  const shortLimit = this.lastBuyPrice * (1 - 1 / leverage / 2);
+  const longLimit = this.lastLongPrice * (1 + this.limitPercent);
+
+  const stopPercent = 1 / leverage / 2; // 0.1
+  const shortLimit = this.lastBuyPrice * (1 - stopPercent);
   if (this.candle.low <= shortLimit) {
-    this.lastBuyPrice = 0;
-    const percent = 0.5;
+    const percent = (1 - leverage * stopPercent);
+    this.statistics.stoped += 1;
     this.storeResult(percent);
+    this.lastBuyPrice = 0;
   } else if (longLimit <= this.candle.high) {
-    this.lastBuyPrice = 0;
-    const percent = (1 + leverage * 0.01) * 0.9994
+    const limitPercent = longLimit / this.lastBuyPrice - 1;
+    const percent = 1 + leverage * limitPercent - 0.001;
+    this.statistics.filled += 1;
     this.storeResult(percent);
+    this.lastBuyPrice = 0;
+  }
+}
+
+Base.prototype.checkAdviceLimits = function(newDirection) {
+  const price = this.candle[this.priceValue];
+
+  if (newDirection == 'short' && this.lastBuyPrice) {
+    const { leverage } = this;
+    let percent = price / this.lastBuyPrice - 1;
+    if (percent >= 0) this.statistics.plus += 1;
+    else this.statistics.minus += 1;
+
+    percent = 1 + leverage * percent - 0.001;
+    this.storeResult(percent);
+    this.lastBuyPrice = 0;
+  } else if (newDirection == 'long') {
+    if (!this.lastBuyPrice) {
+      this.lastBuyIndex = this.age;
+      this.lastOpenTime = this.candle.openTime;
+      this.lastBuyPrice = price;
+    }
+
+    this.lastLongPrice = price;
   }
 }
 
 Base.prototype.advice = function (newDirection) {
+  // const date = moment(this.candle.openTime).utcOffset(-5).format('MM-DD HH:mm:ss');
+  // console.log(date, this.settings.symbol, newDirection ? newDirection : '');
   // ignore legacy soft advice
   if (!newDirection) {
     return;
@@ -291,10 +331,14 @@ Base.prototype.advice = function (newDirection) {
 
     newDirection = newDirection.direction;
   }
+  // const date = moment(this.candle.openTime).utcOffset(-5).format('MM-DD HH:mm:ss');
+  // console.log(
+  //   date,
+  //   newDirection);
 
-  if (newDirection === this._currentDirection) {
-    return;
-  }
+  // if (newDirection === this._currentDirection) {
+  //   return;
+  // }
 
   if (newDirection === 'short' && this._pendingTriggerAdvice) {
     this._pendingTriggerAdvice = null;
@@ -303,22 +347,7 @@ Base.prototype.advice = function (newDirection) {
   this._currentDirection = newDirection;
   const price = this.candle[this.priceValue];
 
-  if (newDirection == 'short' && this.lastBuyPrice) {
-    const { leverage } = this;
-    let percent = (price - this.lastBuyPrice) / this.lastBuyPrice;
-    const aPercent = Math.abs(percent);
-    if (percent >= 0) {
-      percent = (1 + leverage * aPercent) * 0.9992;
-    } else {
-      percent = (1 - leverage * aPercent * 1.0008);
-    }
-    this.storeResult(percent);
-    this.lastBuyPrice = 0;
-  } else if (newDirection == 'long') {
-    this.lastBuyPrice = price;
-    this.lastBuyIndex = this.age;
-    this.lastOpenTime = this.candle.openTime;
-  }
+  this.checkAdviceLimits(newDirection);
 
   this.propogatedAdvices++;
 
@@ -356,15 +385,15 @@ Base.prototype.storeResult = function (profit) {
     closeTime: this.candle.closeTime
   });
 
-  const { profitHours } = advisorConfig;
-  const limitTime = this.candle.closeTime - profitHours * HOUR_MS;
-  this.result = this.result.filter(({ openTime }) => openTime > limitTime);
+  // const { profitHours } = advisorConfig;
+  // const limitTime = this.candle.closeTime - profitHours * HOUR_MS;
+  // this.result = this.result.filter(({ openTime }) => openTime > limitTime);
 }
 
 Base.prototype.getDailyProfit = function () {
-  let total = 1;
-  this.result.forEach(({ profit }) => total *= profit);
-  return Math.floor(total * 10000) / 10000;
+  let total = 0;
+  this.result.forEach(({ profit }) => total += profit - 1);
+  return parseFloat(total.toFixed(4));
 }
 
 Base.prototype.notify = function (content) {
