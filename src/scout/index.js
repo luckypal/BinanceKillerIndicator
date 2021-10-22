@@ -20,7 +20,7 @@ _.each(strategy, function (fn, name) {
   WrappedStrategy.prototype[name] = fn;
 });
 
-let symbols = ['ETHUSDT', 'BNBUSDT', 'XRPUSDT', 'DOGEUSDT']; // readSymbols();
+let symbols = readSymbols();
 const tradingMethods = {};
 
 const updateSymbol = () => {
