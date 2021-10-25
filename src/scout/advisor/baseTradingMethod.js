@@ -262,7 +262,7 @@ Base.prototype.checkLimits = function () {
     this.lastBuyPrice = 0;
   } else if (longLimit <= this.candle.high) {
     const limitPercent = longLimit / this.lastBuyPrice - 1;
-    const percent = 1 + leverage * limitPercent - 0.001;
+    const percent = 1 + leverage * limitPercent - 0.007;
     this.statistics.filled += 1;
     this.storeResult(percent);
     this.lastBuyPrice = 0;
@@ -278,7 +278,7 @@ Base.prototype.checkAdviceLimits = function(newDirection) {
     if (percent >= 0) this.statistics.plus += 1;
     else this.statistics.minus += 1;
 
-    percent = 1 + leverage * percent - 0.001;
+    percent = 1 + leverage * percent - 0.007;
     this.storeResult(percent);
     this.lastBuyPrice = 0;
   } else if (newDirection == 'long') {

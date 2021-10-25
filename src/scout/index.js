@@ -66,7 +66,7 @@ const start = async () => {
   console.log('Ready.', getProfits());
 }
 
-cron.schedule(`*/${candleSize} * * * *`, async () => {
+cron.schedule(`1 */${candleSize} * * * *`, async () => {
   const newAdvices = (await Promise.all(symbols.map(async symbol => {
     const candles = await getCandles(symbol, 2);
     const candle = getNearCandle(candles);
